@@ -1,0 +1,378 @@
+# =============================================================================
+# config.yaml
+# Seagrass Health Predictive Pipeline — Master Configuration
+#
+# PURPOSE:
+#   Centralises all file paths, processing parameters, model hyperparameters,
+#   and output settings. No values are hardcoded in source modules; all modules
+#   read from this file via utils.config_loader.load_config().
+#
+# USAGE:
+#   python run_pipeline.py --config config/config.yaml
+#
+# REPRODUCIBILITY:
+#   Commit this file alongside results. Any change to a parameter here
+#   constitutes a methodological change that must be logged and described
+#   in the Methods section of the manuscript.
+#
+# AUTHOR:   [Author placeholder]
+# CREATED:  2026
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. PROJECT METADATA
+# -----------------------------------------------------------------------------
+project:
+  name: "Seagrass Health Predictive Pipeline"
+  version: "1.0.0"
+  study_area: "Florida Bay, Upper Florida Keys"
+  target_journal: ""          # e.g. "Remote Sensing of Environment"
+  citation_style: "Elsevier"  # APA | Elsevier | MDPI
+  authors: []                 # Fill before submission
+
+# -----------------------------------------------------------------------------
+# 2. FILE PATHS
+# All paths are relative to the project root (seagrass_pipeline/).
+# -----------------------------------------------------------------------------
+paths:
+  # --- Inputs (raw, read-only) ---
+  wq_csv:        "data/raw/wq_florida_bay_dbhydro.csv"
+  study_area_shp: "data/raw/study_area.shp"   # Optional bounding shapefile
+
+  # Sentinel-2 L2A imagery (see scripts/download_sentinel2.py). This is
+  # ONE SCENE PER ~30-DAY WINDOW across the whole study period (120 scenes
+  # as of the 2026-07-26 download), not a single image -- the original
+  # single-raster design below was replaced once it became clear the study
+  # spans a decade, not one acquisition date. `sentinel2_manifest` lists
+  # scene_id/datetime/cloud_cover; each scene's bands live in
+  # sentinel2_dir/<scene_id>/{B02,B04,B08}.jp2.
+  sentinel2_dir:      "data/raw/sentinel2/"
+  sentinel2_manifest: "data/raw/sentinel2/scene_manifest.csv"
+
+  # --- Intermediate outputs ---
+  interim_dir:   "data/interim/"
+  wq_clean:      "data/interim/wq_florida_bay_clean.parquet"  # Stage 1 output
+
+  # Stage 2 outputs: one NDAVI/WAVI/NDVI raster per scene, mirroring
+  # sentinel2_dir's per-scene subfolder layout.
+  spectral_indices_dir:      "data/interim/spectral_indices/"
+  spectral_indices_manifest: "data/interim/spectral_indices_manifest.csv"
+
+  joined_gdf:    "data/interim/wq_spectral_joined.gpkg"
+
+  # --- Final processed data ---
+  processed_dir: "data/processed/"
+  features_parquet: "data/processed/features.parquet"
+  train_parquet:    "data/processed/train.parquet"
+  test_parquet:     "data/processed/test.parquet"
+
+  # --- Outputs ---
+  figures_dir:   "outputs/figures/"
+  models_dir:    "outputs/models/"
+  reports_dir:   "outputs/reports/"
+  rf_model:      "outputs/models/rf_model.pkl"
+  xgb_model:     "outputs/models/xgb_model.pkl"
+  metrics_csv:   "outputs/reports/metrics_comparison.csv"
+  metrics_tex:   "outputs/reports/metrics_comparison.tex"
+
+# -----------------------------------------------------------------------------
+# 3. DATA INGESTION PARAMETERS (Stage 1)
+# -----------------------------------------------------------------------------
+ingestion:
+  # DBHYDRO Insights exports are in LONG format: one row per
+  # station x collectDate x parameter measurement, not one row per
+  # station-date with a column per parameter. Stage 1 pivots this to wide
+  # format before the rename map below is applied. See
+  # data/raw/wq_florida_bay_dbhydro.csv (exported 2026-07-26, stations in
+  # Monroe + Miami-Dade counties, matrix=SA, 2016-01-01 to 2026-01-01).
+
+  # Only rows with this `matrix` code are kept. SA = saltwater/estuarine
+  # ambient water -- the FLAB* (Florida Bay) and C111* (canal inflow)
+  # stations relevant to this study. The `SW` matrix in this export is
+  # freshwater inland canal monitoring (stations north of Florida Bay,
+  # e.g. Biscayne Bay tributaries) and is out of scope.
+  matrix_filter: "SA"
+
+  # Only rows with this `sampleType` are kept; QC replicates/duplicates
+  # (RS, FD) and blanks (EB, FB, FCEB) are excluded to avoid
+  # pseudo-replication in the station-date feature table.
+  sample_type_filter: "SAMP"
+
+  # DBHYDRO stores longitude as an unsigned magnitude (implicitly
+  # "degrees West"), e.g. 80.52 rather than -80.52. Verified against the
+  # 2026-07-26 export: all rows are positive. Corrected via
+  # longitude = -abs(raw_longitude).
+  longitude_stored_as_positive: true
+
+  # Rows with `depth` beyond this value (metres) are logged as suspect
+  # (see MAX_PLAUSIBLE_DEPTH_M in src/utils/validation.py) rather than
+  # silently trusted -- Florida Bay is a shallow lagoon and a reported
+  # depth this large is almost certainly a unit/entry error.
+  max_plausible_depth_m: 5.0
+
+  # Raw `parameter` string (DBHYDRO long format) -> pipeline column name,
+  # applied after pivoting station x date to one row per sample event.
+  # Confirmed against the actual distinct `parameter` values present in
+  # the Florida Bay (SA-matrix) subset of the 2026-07-26 export; TSS,
+  # COLOR, and NITROGEN-TOTAL-DISSOLVED exist elsewhere in DBHYDRO but
+  # were not measured at these specific stations, so they are mapped
+  # here in case a future export includes them.
+  column_rename_map:
+    "PHOSPHATE, TOTAL AS P":      "tpo4_mg_L"
+    "TOTAL NITROGEN":             "totn_mg_L"
+    "NITRATE+NITRITE-N":          "nox_mg_L"
+    "AMMONIA-N":                  "nh4_mg_L"
+    "Temperature":                "temp_C"
+    "PH, FIELD":                  "ph"
+    "DISSOLVED OXYGEN":           "do_mg_L"
+    "SALINITY":                   "salinity_ppt"
+    "TURBIDITY":                  "turbidity_NTU"
+    "CHLOROPHYLL-A(LC)":          "chla_ug_L"
+    "SECCHI DISK DEPTH":          "secchi_m"
+    "TOTAL SUSPENDED SOLIDS":     "tss_mg_L"
+    "COLOR":                      "color_pcu"
+    "NITROGEN, TOTAL DISSOLVED":  "totdn_mg_L"
+
+  # Required columns that MUST be present after pivot + rename.
+  # NOTE: "health_status" (the target label) is deliberately NOT required
+  # at Stage 1 -- DBHYDRO has no seagrass condition data. It is merged in
+  # from SEACAR (or another labelled source) at Stage 4 and validated
+  # there instead. Pipeline will raise ValueError if any of these are
+  # missing after ingestion.
+  required_wq_columns:
+    - "station_id"
+    - "date"
+    - "chla_ug_L"
+    - "tpo4_mg_L"
+    - "totn_mg_L"
+    - "nox_mg_L"
+    - "nh4_mg_L"
+    - "do_mg_L"
+    - "salinity_ppt"
+    - "turbidity_NTU"
+    - "temp_C"
+    - "ph"
+    - "secchi_m"
+    - "latitude"
+    - "longitude"
+
+  # Coordinate reference system for WQ sample points.
+  # SFWMD DBHYDRO exports decimal degrees (WGS84).
+  wq_crs: "EPSG:4326"
+
+  # Date column parse format (pandas strptime), applied to `collectDate`
+  # after truncating to the date component (time-of-day is not used for
+  # WQ-to-Sentinel-2 temporal matching).
+  date_format: "%Y-%m-%d"
+
+  # Allowable date window: WQ sample must fall within this many days
+  # of the Sentinel-2 acquisition date to be considered temporally matched.
+  # Rationale: Seagrass conditions change on weekly to monthly timescales;
+  # a ±30-day window is standard in the Florida Bay literature
+  # (Zieman et al., 1999; Hall et al., 1999).
+  max_date_offset_days: 30
+
+# -----------------------------------------------------------------------------
+# 4. SPECTRAL INDEX PARAMETERS (Stage 2)
+# -----------------------------------------------------------------------------
+spectral_index:
+  # Indices to compute. All three are always computed for comparability;
+  # primary indices for SAV are NDAVI and WAVI (Villa et al., 2013, 2014).
+  compute: ["ndavi", "wavi", "ndvi"]
+
+  # WAVI soil-adjusted parameter L.
+  # L = 0.5 is the empirically recommended value for moderate vegetation density
+  # (Villa et al., 2014). Range: 0 (dense) to 1 (sparse).
+  wavi_L: 0.5
+
+  # NoData / fill value for pixels outside water mask or with invalid reflectance.
+  nodata_value: -9999
+
+  # Reflectance valid range. Sentinel-2 Level-2A surface reflectance is
+  # scaled as integer (0–10000) representing 0.0–1.0 reflectance.
+  # Values outside this range are masked as invalid.
+  reflectance_scale_factor: 0.0001
+  reflectance_valid_min: 0
+
+  # Output raster storage. Index values (~[-1.5, 1.5]) are multiplied by
+  # this factor and stored as int16 rather than float32 -- an uncompressed
+  # float32 run of all 120 scenes filled a 465 GB disk (each single-band
+  # 10980x10980 float32 raster is ~482 MB; int16 + compression cuts this
+  # by roughly 4-8x). Same scaling convention as Sentinel-2's own
+  # reflectance storage, for consistency.
+  output_scale_factor: 10000
+  output_compression: "DEFLATE"
+  reflectance_valid_max: 10000
+
+# -----------------------------------------------------------------------------
+# 5. SPATIAL JOIN PARAMETERS (Stage 3)
+# -----------------------------------------------------------------------------
+spatial_join:
+  # Strategy: point_extraction | buffered_mean | zonal_stats
+  # - point_extraction: exact pixel value at WQ coordinate (fastest; use when
+  #   GPS accuracy < 5 m and pixel size ≥ 10 m)
+  # - buffered_mean: mean of pixels within buffer radius (recommended default;
+  #   accounts for GPS uncertainty and sub-pixel variability)
+  # - zonal_stats: for polygon-based WQ zones (use with SEACAR transect data)
+  # See Roelfsema et al. (2014) for buffer-radius guidance.
+  strategy: "buffered_mean"
+
+  # Buffer radius in metres. 20 m ≈ 2× Sentinel-2 pixel size (10 m).
+  # Rationale: buffer of 1–3× pixel size recommended to account for
+  # georeferencing uncertainty in nearshore environments
+  # (Roelfsema et al., 2014, Estuarine, Coastal and Shelf Science).
+  buffer_radius_m: 20
+
+  # For zonal_stats strategy: statistics to compute per zone.
+  zonal_stats_metrics: ["mean", "median", "std", "count"]
+
+  # Projected CRS for spatial operations (metres required for buffer).
+  # UTM Zone 17N covers Florida Bay.
+  projected_crs: "EPSG:32617"
+
+# -----------------------------------------------------------------------------
+# 6. FEATURE ENGINEERING PARAMETERS (Stage 4)
+# -----------------------------------------------------------------------------
+feature_engineering:
+  # Target variable encoding (ordinal-aware for RF/XGBoost).
+  # Must match values in health_status column of WQ CSV.
+  target_encoding:
+    "Healthy":      2
+    "Intermediate": 1
+    "Not Healthy":  0
+
+  # Derived feature flags — set to false to exclude from feature table.
+  compute_np_ratio: true        # N:P molar ratio (Redfield context: Redfield, 1958)
+  compute_turbidity_depth: true # turbidity × Secchi depth interaction
+  compute_chla_tp_ratio: true   # Chl-a:TP ratio (indicator of P limitation)
+  compute_seasonal: true        # Month and season dummies from date column
+
+  # Secchi depth column name (required for turbidity_depth interaction).
+  # Set to null if Secchi data unavailable — interaction term will be skipped.
+  secchi_column: "secchi_m"
+
+  # Columns to exclude from the feature matrix (identifiers, not predictors).
+  drop_columns:
+    - "station_id"
+    - "date"
+    - "latitude"
+    - "longitude"
+
+# -----------------------------------------------------------------------------
+# 7. PREPROCESSING PARAMETERS (Stage 5)
+# -----------------------------------------------------------------------------
+preprocessing:
+  # Missing value imputation strategy for WQ parameters.
+  # Median imputation is preferred over mean for environmental data because
+  # WQ distributions are typically right-skewed (e.g., turbidity, Chl-a)
+  # and outliers from episodic events should not distort the imputed value
+  # (Templ et al., 2011).
+  imputation_strategy: "median"
+
+  # Maximum fraction of missing values allowed per column before the
+  # column is dropped entirely. Columns above this threshold likely
+  # represent unreliable monitoring records.
+  max_missing_fraction: 0.40
+
+  # Scaling. StandardScaler applied to all numeric features.
+  # Note: scaling is not required for tree-based models but is applied
+  # here to ensure SHAP magnitude comparability across features with
+  # different units (e.g., temperature vs. turbidity).
+  apply_scaling: true
+
+  # Train/test split.
+  test_size: 0.30
+  # Stratified split preserves class distribution in both sets.
+  # Required given potential class imbalance in ecological monitoring data.
+  stratify: true
+
+  # Cross-validation.
+  cv_folds: 5
+
+  # Random seed — set once here; propagated to all stochastic operations.
+  random_seed: 42
+
+  # Class imbalance handling.
+  # Options: null (none) | "class_weight" | "smote" | "both"
+  # class_weight: passes class_weight='balanced' to sklearn classifiers
+  # smote: applies SMOTE oversampling to training set only (never test set)
+  # Note: SMOTE is controversial in ecology (Valavi et al., 2021); both
+  # options are implemented so the reviewer can choose or compare.
+  imbalance_strategy: "class_weight"
+
+# -----------------------------------------------------------------------------
+# 8. MODEL HYPERPARAMETER SEARCH GRIDS (Stage 6)
+# -----------------------------------------------------------------------------
+models:
+  # Scoring metric for GridSearchCV.
+  # macro-F1 is appropriate for imbalanced multi-class classification
+  # because it weights each class equally regardless of support
+  # (Sokolova & Lapalme, 2009).
+  scoring_metric: "f1_macro"
+
+  random_forest:
+    # GridSearchCV parameter grid
+    param_grid:
+      n_estimators:      [100, 300, 500]
+      max_depth:         [null, 10, 20, 30]
+      min_samples_split: [2, 5, 10]
+      max_features:      ["sqrt", "log2", 0.3]
+    # Fixed parameters
+    n_jobs: -1
+    class_weight: "balanced"   # overridden by imbalance_strategy if "class_weight"
+
+  xgboost:
+    # GridSearchCV parameter grid
+    param_grid:
+      n_estimators:       [100, 300, 500]
+      max_depth:          [3, 5, 7]
+      learning_rate:      [0.01, 0.05, 0.1]
+      subsample:          [0.7, 0.9, 1.0]
+      colsample_bytree:   [0.7, 0.9, 1.0]
+      reg_alpha:          [0, 0.1, 1.0]
+      reg_lambda:         [1.0, 2.0]
+    # Fixed parameters
+    objective: "multi:softprob"
+    eval_metric: "mlogloss"
+    use_label_encoder: false
+    n_jobs: -1
+
+# -----------------------------------------------------------------------------
+# 9. SHAP ANALYSIS PARAMETERS (Stage 7)
+# -----------------------------------------------------------------------------
+shap:
+  # TreeExplainer check_additivity: set false for XGBoost multi:softprob
+  # to avoid numerical precision errors in multi-class probability outputs.
+  check_additivity: false
+
+  # Number of background samples for SHAP KernelExplainer (if used as fallback).
+  n_background_samples: 100
+
+  # Max features shown in summary/bar plots.
+  max_display_features: 15
+
+  # Representative samples per class for local (force/waterfall) plots.
+  n_local_samples_per_class: 3
+
+# -----------------------------------------------------------------------------
+# 10. FIGURE PARAMETERS
+# -----------------------------------------------------------------------------
+figures:
+  dpi: 300
+  format: "png"           # png | pdf | svg
+  colormap_diverging: "RdYlGn"   # For health class visualisations
+  colormap_sequential: "viridis"
+  figure_width_single: 8         # inches, single-column
+  figure_width_double: 16        # inches, two-column
+  font_size_axis: 11
+  font_size_title: 12
+  font_family: "sans-serif"
+
+# -----------------------------------------------------------------------------
+# 11. LOGGING
+# -----------------------------------------------------------------------------
+logging:
+  level: "INFO"          # DEBUG | INFO | WARNING | ERROR
+  log_to_file: true
+  log_dir: "outputs/reports/"
+  # Log filename includes timestamp: pipeline_run_YYYYMMDD_HHMMSS.log

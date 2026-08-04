@@ -1,0 +1,35 @@
+# Data -- raw/interim/processed data is regenerable via scripts/ and the
+# pipeline stages, and far exceeds what git/GitHub should hold (100 MB+
+# per-file limits; this project alone has 150+ GB of imagery/exports).
+data/raw/*
+data/interim/*
+data/processed/*
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+
+# Standalone data exports dropped at the project root during development
+*.zip
+sfwmd-data-*.csv
+
+# Pipeline outputs -- regenerable by running run_pipeline.py against the
+# (gitignored) data above.
+outputs/figures/*
+outputs/models/*
+outputs/reports/*
+!outputs/figures/.gitkeep
+!outputs/models/.gitkeep
+!outputs/reports/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Editor / agent-local settings
+.vscode/
+.claude/settings.local.json
+
+# OS cruft
+.DS_Store
+Thumbs.db
