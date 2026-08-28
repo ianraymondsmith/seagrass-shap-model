@@ -157,6 +157,224 @@ def save_figure(
     return out_path
 
 
+# Shared between plot_environmental_time_series and
+# plot_environmental_scatter so the two companion figures stay visually
+# consistent. Each panel gets its own pair of genuinely different (not
+# shades of one hue) colours, and no colour repeats anywhere across all
+# 12 panels x 2 groups = 24 total colour slots.
+_ENV_PANELS = [
+    ("chla_ug_L",     "Chlorophyll-a (µg/L)",       "#1f77b4", "#ff7f0e"),
+    ("salinity_ppt",  "Salinity (ppt)",              "#d62728", "#17becf"),
+    ("temp_C",        "Water Temperature (°C)",      "#e377c2", "#bcbd22"),
+    ("do_mg_L",       "Dissolved Oxygen (mg/L)",     "#9467bd", "#8c564b"),
+    ("ph",            "pH",                          "#2ca02c", "#ff1493"),
+    ("turbidity_NTU", "Turbidity (NTU)",             "#000000", "#daa520"),
+    ("secchi_m",      "Secchi Depth (m)",            "#008080", "#dc143c"),
+    ("tpo4_mg_L",     "Total Phosphorus (mg/L)",     "#000080", "#32cd32"),
+    ("totn_mg_L",     "Total Nitrogen (mg/L)",       "#800000", "#40e0d0"),
+    ("nox_mg_L",      "Nitrate+Nitrite-N (mg/L)",    "#4b0082", "#ff7f50"),
+    ("nh4_mg_L",      "Ammonia-N (mg/L)",            "#006400", "#da70d6"),
+    ("ndavi",         "NDAVI",                       "#6a5acd", "#ff8c00"),
+]
+
+
+def _prep_station_group_data(df: pd.DataFrame) -> pd.DataFrame:
+    """Add `station_group` (FLAB vs C-111) and month-bucket columns."""
+    data = df.copy()
+    data["date"] = pd.to_datetime(data["date"])
+    data["station_group"] = np.where(
+        data["station_id"].str.startswith("FLAB"), "Open Bay (FLAB)", "Canal Inflow (C111)"
+    )
+    data["month"] = data["date"].dt.to_period("M").dt.to_timestamp()
+    return data
+
+
+def plot_environmental_time_series(
+    df: pd.DataFrame,
+    figures_dir: str = "outputs/figures",
+    dpi: int = 300,
+    fmt: str = "png",
+) -> plt.Figure:
+    """
+    Multi-panel time series of key water-quality and spectral variables.
+
+    Produces a 6x2 grid, one panel per variable, each showing two monthly-
+    mean lines: open-bay (FLAB*) stations vs. C-111 canal-inflow stations,
+    plotted separately rather than blended into one bay-wide average.
+    FLAB and C-111 are known to be hydrologically distinct (open estuarine
+    water vs. freshwater canal discharge with systematically different
+    nutrient chemistry -- see config.yaml's ingestion notes); averaging
+    them together would obscure that real difference rather than reveal it.
+    Each panel has its own pair of genuinely distinct colours for FLAB vs
+    C-111 (not shades of one hue), with no colour reused across any of
+    the 12 panels, and a legend on each panel.
+
+    Uses boxed axes, gridlines, and wider panel spacing rather than this
+    module's default minimal-chart-junk style (see `set_publication_style`)
+    -- deliberately overridden locally for this figure only, modelled on
+    the multi-panel environmental time series figures common in harmful-
+    algal-bloom and water-quality driver studies.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Stage 3 output (or equivalent): one row per station-date, with
+        `station_id`, `date`, WQ parameter columns, and `ndavi`.
+    figures_dir : str, optional
+        Output directory. Default: ``"outputs/figures"``.
+    dpi : int, optional
+        Output resolution. Default: ``300``.
+    fmt : str, optional
+        File format. Default: ``"png"``.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+
+    Examples
+    --------
+    >>> fig = plot_environmental_time_series(joined_df)
+    """
+    data = _prep_station_group_data(df)
+
+    fig, axes = plt.subplots(6, 2, figsize=(18, 28), sharex=True)
+    axes = axes.flatten()
+
+    for ax, (col, ylabel, flab_colour, c111_colour) in zip(axes, _ENV_PANELS):
+        if col not in data.columns:
+            ax.set_visible(False)
+            continue
+        group_colours = {"Open Bay (FLAB)": flab_colour, "Canal Inflow (C111)": c111_colour}
+        c111_end_date = None
+        for group, colour in group_colours.items():
+            series = (
+                data[data["station_group"] == group]
+                .groupby("month")[col].mean().dropna()
+            )
+            ax.plot(
+                series.index, series.values,
+                color=colour, label=group,
+                linewidth=2.5, solid_capstyle="round",
+            )
+            if group == "Canal Inflow (C111)" and not series.empty:
+                c111_end_date = series.index.max()
+        ax.set_ylabel(ylabel, fontweight="bold")
+        ax.yaxis.set_major_locator(ticker.MaxNLocator(6))
+
+        # C-111 monitoring genuinely ended (confirmed against the raw
+        # DBHYDRO export, not a pipeline artifact) -- mark it explicitly,
+        # in one uniform colour/style across every panel, so the line
+        # stopping doesn't read as a data-processing error. Labelled (not
+        # annotated with on-plot text) so it shows up in each legend.
+        if c111_end_date is not None:
+            ax.axvline(
+                c111_end_date, color="red", linestyle="--", linewidth=1.5,
+                alpha=0.8, label="C-111 monitoring ended",
+            )
+
+        # Boxed axes + gridlines, overriding this module's default
+        # minimal-chart-junk style for this figure specifically.
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+            spine.set_linewidth(1.2)
+        ax.grid(True, alpha=0.4, linewidth=0.6)
+        ax.set_axisbelow(True)
+        ax.legend(loc="upper right", frameon=True, framealpha=0.9)
+
+    for ax in axes[-2:]:
+        ax.set_xlabel("Date", fontweight="bold")
+
+    fig.suptitle("Water Quality and Spectral Index Time Series — Florida Bay", y=0.995, fontweight="bold")
+    fig.subplots_adjust(top=0.97, bottom=0.03, left=0.06, right=0.98, hspace=0.45, wspace=0.3)
+
+    save_figure(fig, "environmental_time_series", figures_dir, dpi, fmt)
+    return fig
+
+
+def plot_environmental_scatter(
+    df: pd.DataFrame,
+    figures_dir: str = "outputs/figures",
+    dpi: int = 300,
+    fmt: str = "png",
+) -> plt.Figure:
+    """
+    Multi-panel scatter of raw (unaggregated) water-quality and spectral
+    samples -- companion to `plot_environmental_time_series`.
+
+    Same 6x2 layout, panel set, and colour scheme as the time-series
+    figure, but plots every individual sample as a point rather than a
+    monthly mean line. Monthly aggregation hides real sample-to-sample
+    variability and outliers; this figure shows the actual data density
+    and spread instead. Modelled on the raw-sample scatter plots (coloured
+    by station group) used alongside smoothed time series in harmful-
+    algal-bloom driver studies.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Stage 3 output (or equivalent): one row per station-date, with
+        `station_id`, `date`, WQ parameter columns, and `ndavi`.
+    figures_dir : str, optional
+        Output directory. Default: ``"outputs/figures"``.
+    dpi : int, optional
+        Output resolution. Default: ``300``.
+    fmt : str, optional
+        File format. Default: ``"png"``.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+
+    Examples
+    --------
+    >>> fig = plot_environmental_scatter(joined_df)
+    """
+    data = _prep_station_group_data(df)
+
+    fig, axes = plt.subplots(6, 2, figsize=(18, 28), sharex=True)
+    axes = axes.flatten()
+
+    for ax, (col, ylabel, flab_colour, c111_colour) in zip(axes, _ENV_PANELS):
+        if col not in data.columns:
+            ax.set_visible(False)
+            continue
+        group_colours = {"Open Bay (FLAB)": flab_colour, "Canal Inflow (C111)": c111_colour}
+        c111_end_date = None
+        for group, colour in group_colours.items():
+            sub = data[(data["station_group"] == group) & data[col].notna()]
+            ax.scatter(
+                sub["date"], sub[col],
+                color=colour, label=group,
+                s=18, alpha=0.6, edgecolors="none",
+            )
+            if group == "Canal Inflow (C111)" and not sub.empty:
+                c111_end_date = sub["date"].max()
+        ax.set_ylabel(ylabel, fontweight="bold")
+        ax.yaxis.set_major_locator(ticker.MaxNLocator(6))
+
+        if c111_end_date is not None:
+            ax.axvline(
+                c111_end_date, color="red", linestyle="--", linewidth=1.5,
+                alpha=0.8, label="C-111 monitoring ended",
+            )
+
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+            spine.set_linewidth(1.2)
+        ax.grid(True, alpha=0.4, linewidth=0.6)
+        ax.set_axisbelow(True)
+        ax.legend(loc="upper right", frameon=True, framealpha=0.9)
+
+    for ax in axes[-2:]:
+        ax.set_xlabel("Date", fontweight="bold")
+
+    fig.suptitle("Water Quality and Spectral Index Raw Samples — Florida Bay", y=0.995, fontweight="bold")
+    fig.subplots_adjust(top=0.97, bottom=0.03, left=0.06, right=0.98, hspace=0.45, wspace=0.3)
+
+    save_figure(fig, "environmental_scatter", figures_dir, dpi, fmt)
+    return fig
+
+
 def plot_confusion_matrix(
     cm: np.ndarray,
     model_name: str,

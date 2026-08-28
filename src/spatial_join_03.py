@@ -224,6 +224,7 @@ def run(config: Dict[str, Any]) -> gpd.GeoDataFrame:
     matches = [match_nearest_scene(d, manifest, max_offset_days) for d in wq["date"]]
     wq["matched_scene_id"] = [s["scene_id"] if s is not None else None for s in matches]
     wq["matched_scene_datetime"] = [s["datetime"] if s is not None else pd.NaT for s in matches]
+    wq["cloud_cover"] = [s["cloud_cover"] if s is not None else np.nan for s in matches]
     wq["days_offset"] = (wq["matched_scene_datetime"] - wq["date"]).abs().dt.days
 
     n_unmatched = wq["matched_scene_id"].isna().sum()

@@ -60,6 +60,10 @@ paths:
 
   joined_gdf:    "data/interim/wq_spectral_joined.gpkg"
 
+  # Separate derived output from temporal_resampling -- never overwrites
+  # joined_gdf above.
+  resampled_5day: "data/interim/wq_spectral_resampled_5day.parquet"
+
   # --- Final processed data ---
   processed_dir: "data/processed/"
   features_parquet: "data/processed/features.parquet"
@@ -113,10 +117,12 @@ ingestion:
   # Raw `parameter` string (DBHYDRO long format) -> pipeline column name,
   # applied after pivoting station x date to one row per sample event.
   # Confirmed against the actual distinct `parameter` values present in
-  # the Florida Bay (SA-matrix) subset of the 2026-07-26 export; TSS,
-  # COLOR, and NITROGEN-TOTAL-DISSOLVED exist elsewhere in DBHYDRO but
-  # were not measured at these specific stations, so they are mapped
-  # here in case a future export includes them.
+  # the Florida Bay (SA-matrix) subset of the 2026-07-26 export; TSS and
+  # NITROGEN-TOTAL-DISSOLVED exist elsewhere in DBHYDRO but were not
+  # measured at these specific stations, so they are mapped here in case
+  # a future export includes them. COLOR was dropped entirely (not just
+  # left unmapped) -- it was 100% empty (0/1742 rows) at every station
+  # in this study, so keeping a permanently-empty column added nothing.
   column_rename_map:
     "PHOSPHATE, TOTAL AS P":      "tpo4_mg_L"
     "TOTAL NITROGEN":             "totn_mg_L"
@@ -130,7 +136,6 @@ ingestion:
     "CHLOROPHYLL-A(LC)":          "chla_ug_L"
     "SECCHI DISK DEPTH":          "secchi_m"
     "TOTAL SUSPENDED SOLIDS":     "tss_mg_L"
-    "COLOR":                      "color_pcu"
     "NITROGEN, TOTAL DISSOLVED":  "totdn_mg_L"
 
   # Required columns that MUST be present after pivot + rename.
@@ -229,6 +234,42 @@ spatial_join:
   # Projected CRS for spatial operations (metres required for buffer).
   # UTM Zone 17N covers Florida Bay.
   projected_crs: "EPSG:32617"
+
+# -----------------------------------------------------------------------------
+# 5b. TEMPORAL RESAMPLING (optional, not a numbered pipeline stage)
+# -----------------------------------------------------------------------------
+# Produces a SEPARATE derived table, resampling Stage 3's output onto a
+# regular grid at Sentinel-2's nominal revisit cadence. This does NOT add
+# new real measurements: WQ stations are sampled roughly monthly, so most
+# grid points are linearly interpolated across gaps far larger than
+# resample_freq_days. Intended for time-series analysis/visualisation
+# that needs even spacing, not as a source of additional ground truth.
+# The original Stage 3 output (paths.joined_gdf) is never modified.
+temporal_resampling:
+  # Set to Sentinel-2's nominal revisit cycle as originally requested.
+  # Compared against 15-day and 30-day grids first: mean/median/p75
+  # distance-to-nearest-real-observation was essentially IDENTICAL across
+  # all three (~13/11/19 days) because real WQ sample-to-sample gaps
+  # (median 35 days) bound achievable closeness regardless of grid
+  # spacing -- a finer grid only adds more interpolated rows at the same
+  # fidelity, it doesn't improve or worsen accuracy. Since quality is a
+  # wash, kept at 5 days to match the original request, even though it
+  # doesn't literally reflect true image acquisition frequency (see
+  # ingestion.max_date_offset_days and Stage 2 for the real cadence).
+  resample_freq_days: 5
+  interpolation_method: "time"  # pandas interpolate() method; "time" respects
+                                 # irregular gap sizes rather than assuming
+                                 # equally-spaced samples
+  # Interpolated points beyond this many days from the nearest real
+  # observation are dropped rather than kept as a low-confidence guess.
+  # Matches ingestion.max_date_offset_days (Stage 3's WQ-to-imagery
+  # matching window) for consistency -- both rest on the same literature
+  # basis that seagrass/WQ conditions are only reasonably assumed stable
+  # on weekly-to-monthly timescales. Tightening from 60 to 30 dropped
+  # only 6.4% of resampled rows (913/14259), so the cost was small
+  # relative to removing the least-defensible, most-stretched
+  # interpolations.
+  max_gap_days: 30
 
 # -----------------------------------------------------------------------------
 # 6. FEATURE ENGINEERING PARAMETERS (Stage 4)
