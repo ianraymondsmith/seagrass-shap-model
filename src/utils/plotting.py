@@ -192,7 +192,7 @@ def _prep_station_group_data(df: pd.DataFrame) -> pd.DataFrame:
 def plot_environmental_time_series(
     df: pd.DataFrame,
     figures_dir: str = "outputs/figures",
-    dpi: int = 300,
+    dpi: int = 120,
     fmt: str = "png",
 ) -> plt.Figure:
     """
@@ -237,7 +237,7 @@ def plot_environmental_time_series(
     """
     data = _prep_station_group_data(df)
 
-    fig, axes = plt.subplots(6, 2, figsize=(18, 28), sharex=True)
+    fig, axes = plt.subplots(6, 2, figsize=(13, 19), sharex=True)
     axes = axes.flatten()
 
     for ax, (col, ylabel, flab_colour, c111_colour) in zip(axes, _ENV_PANELS):
@@ -294,7 +294,7 @@ def plot_environmental_time_series(
 def plot_environmental_scatter(
     df: pd.DataFrame,
     figures_dir: str = "outputs/figures",
-    dpi: int = 300,
+    dpi: int = 120,
     fmt: str = "png",
 ) -> plt.Figure:
     """
@@ -331,7 +331,7 @@ def plot_environmental_scatter(
     """
     data = _prep_station_group_data(df)
 
-    fig, axes = plt.subplots(6, 2, figsize=(18, 28), sharex=True)
+    fig, axes = plt.subplots(6, 2, figsize=(13, 19), sharex=True)
     axes = axes.flatten()
 
     for ax, (col, ylabel, flab_colour, c111_colour) in zip(axes, _ENV_PANELS):
