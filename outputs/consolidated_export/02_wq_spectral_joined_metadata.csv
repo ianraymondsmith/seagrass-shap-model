@@ -2,14 +2,14 @@
 Station,"DBHYDRO monitoring station identifier (FLAB*=open bay, C111*=canal inflow)",—,object,1742,1742,0,0.0,22,—,—,—,—
 Date,Water quality sample collection date,—,object,1742,1742,0,0.0,376,2016-01-12,2025-12-15,—,—
 Ammonia,Ammonia-N; bioavailable nitrogen fraction,mg/L,float64,1742,1735,7,0.4,247,0.005,1.461,0.064,0.0879
-Chlorophyll-a,Chlorophyll-a; phytoplankton biomass / bloom indicator,µg/L,float64,1742,1630,112,6.4,834,0.016,53.1,2.2877,4.7008
-Dissolved Oxygen,Dissolved oxygen concentration,mg/L,float64,1742,1665,77,4.4,491,0.25,92.5,6.6475,2.4473
-Nitrate+Nitrite,Nitrate+Nitrite-N (NOx); bioavailable nitrogen fraction,mg/L,float64,1742,1736,6,0.3,70,0.005,0.126,0.0101,0.0126
+Chl-a,Chlorophyll-a; phytoplankton biomass / bloom indicator,µg/L,float64,1742,1630,112,6.4,834,0.016,53.1,2.2877,4.7008
+DO,Dissolved oxygen concentration,mg/L,float64,1742,1665,77,4.4,491,0.25,92.5,6.6475,2.4473
+NOx,Nitrate+Nitrite-N (NOx); bioavailable nitrogen fraction,mg/L,float64,1742,1736,6,0.3,70,0.005,0.126,0.0101,0.0126
 pH,pH (field measurement),—,float64,1742,1715,27,1.5,20,7.0,11.4,8.0508,0.209
-Total Phosphorus,"Total phosphorus, reported as elemental P (DBHYDRO: 'Phosphate, Total as P')",mg/L,float64,1742,1739,3,0.2,161,0.002,0.4679,0.0128,0.0239
+TP,"Total phosphorus, reported as elemental P (DBHYDRO: 'Phosphate, Total as P')",mg/L,float64,1742,1739,3,0.2,161,0.002,0.4679,0.0128,0.0239
+TN,"Total nitrogen (organic + inorganic, dissolved + particulate)",mg/L,float64,1742,1738,4,0.2,824,0.156,6.3362,0.9107,0.5607
 Salinity,Salinity,ppt,float64,1742,1715,27,1.5,408,0.61,46.6,29.3992,9.3903
 Secchi Depth,Secchi disk depth; water clarity / light penetration proxy,m,float64,1742,1625,117,6.7,59,0.2,5.5,1.5988,0.7042
-Total Nitrogen,"Total nitrogen (organic + inorganic, dissolved + particulate)",mg/L,float64,1742,1738,4,0.2,824,0.156,6.3362,0.9107,0.5607
 Turbidity,Turbidity; light-attenuation driver,NTU,float64,1742,1632,110,6.3,172,0.2,81.0,3.4464,5.3989
 Water Temperature,Water temperature,°C,float64,1742,1718,24,1.4,190,11.5,34.3,26.5194,4.0919
 Latitude,Station latitude (WGS84),decimal deg,float64,1742,1742,0,0.0,27,24.9186,25.2408,25.1341,0.0892
