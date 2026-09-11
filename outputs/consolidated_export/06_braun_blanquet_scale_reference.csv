@@ -1,9 +1,9 @@
-﻿Score,Taxa Abundance,Percent Cover,Project Health Classification
-0.0,Absent,0%,Not Healthy
-0.1,Solitary,< 5%,Not Healthy
-0.5,Sparse,< 5%,Not Healthy
-1.0,Many,< 5%,Not Healthy
-2.0,—,5% - 25%,Intermediate
-3.0,—,25% - 50%,Intermediate
-4.0,—,50% - 75%,Healthy
-5.0,—,75% - 100%,Healthy
+﻿Score,Modified Score,Description,Project Health Classification
+0,0.0,Absent; no individuals present,Not Healthy
+N,0.1,"Not many, 1-10 individuals",Not Healthy
+T,0.5,Sparsely or very sparsely present; cover very small (less than 5%),Not Healthy
+1,1.0,Plentiful but of small cover (less than 5%),Not Healthy
+2,2.0,Any number of individuals covering 5-25% of the area,Intermediate
+3,3.0,Any number of individuals covering 25-50% of the area,Intermediate
+4,4.0,Any number of individuals covering 50-75% of the area,Healthy
+5,5.0,Covering more than 75% of the area,Healthy
