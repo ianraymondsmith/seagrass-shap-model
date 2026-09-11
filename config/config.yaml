@@ -117,12 +117,13 @@ ingestion:
   # Raw `parameter` string (DBHYDRO long format) -> pipeline column name,
   # applied after pivoting station x date to one row per sample event.
   # Confirmed against the actual distinct `parameter` values present in
-  # the Florida Bay (SA-matrix) subset of the 2026-07-26 export; TSS and
-  # NITROGEN-TOTAL-DISSOLVED exist elsewhere in DBHYDRO but were not
-  # measured at these specific stations, so they are mapped here in case
-  # a future export includes them. COLOR was dropped entirely (not just
-  # left unmapped) -- it was 100% empty (0/1742 rows) at every station
-  # in this study, so keeping a permanently-empty column added nothing.
+  # the Florida Bay (SA-matrix) subset of the 2026-07-26 export;
+  # NITROGEN-TOTAL-DISSOLVED exists elsewhere in DBHYDRO but was not
+  # measured at these specific stations, so it is mapped here in case a
+  # future export includes it. COLOR and TOTAL SUSPENDED SOLIDS were
+  # dropped entirely (not just left unmapped) -- both were 100% empty
+  # (0/1742 rows) at every station in this study, so keeping a
+  # permanently-empty column added nothing.
   column_rename_map:
     "PHOSPHATE, TOTAL AS P":      "tpo4_mg_L"
     "TOTAL NITROGEN":             "totn_mg_L"
@@ -135,7 +136,6 @@ ingestion:
     "TURBIDITY":                  "turbidity_NTU"
     "CHLOROPHYLL-A(LC)":          "chla_ug_L"
     "SECCHI DISK DEPTH":          "secchi_m"
-    "TOTAL SUSPENDED SOLIDS":     "tss_mg_L"
     "NITROGEN, TOTAL DISSOLVED":  "totdn_mg_L"
 
   # Required columns that MUST be present after pivot + rename.

@@ -1,0 +1,26 @@
+﻿Column Name,Original Column,Description,Units,Data Type,Total Rows,Non-Null Count,Null Count,% Null,Unique Values,Min,Max,Mean,Std Dev
+Station,station_id,"DBHYDRO monitoring station identifier (FLAB*=open bay, C111*=canal inflow)",—,object,1742,1742,0,0.0,22,—,—,—,—
+Date,date,Water quality sample collection date,—,object,1742,1742,0,0.0,376,2016-01-12,2025-12-15,—,—
+Ammonia,nh4_mg_L,Ammonia-N; bioavailable nitrogen fraction,mg/L,float64,1742,1735,7,0.4,247,0.005,1.461,0.064,0.0879
+Chlorophyll-a,chla_ug_L,Chlorophyll-a; phytoplankton biomass / bloom indicator,µg/L,float64,1742,1630,112,6.4,834,0.016,53.1,2.2877,4.7008
+Dissolved Oxygen,do_mg_L,Dissolved oxygen concentration,mg/L,float64,1742,1665,77,4.4,491,0.25,92.5,6.6475,2.4473
+Nitrate+Nitrite,nox_mg_L,Nitrate+Nitrite-N (NOx); bioavailable nitrogen fraction,mg/L,float64,1742,1736,6,0.3,70,0.005,0.126,0.0101,0.0126
+pH,ph,pH (field measurement),—,float64,1742,1715,27,1.5,20,7.0,11.4,8.0508,0.209
+Total Phosphorus,tpo4_mg_L,"Total phosphorus, reported as elemental P (DBHYDRO: 'Phosphate, Total as P')",mg/L,float64,1742,1739,3,0.2,161,0.002,0.4679,0.0128,0.0239
+Salinity,salinity_ppt,Salinity,ppt,float64,1742,1715,27,1.5,408,0.61,46.6,29.3992,9.3903
+Secchi Depth,secchi_m,Secchi disk depth; water clarity / light penetration proxy,m,float64,1742,1625,117,6.7,59,0.2,5.5,1.5988,0.7042
+Total Nitrogen,totn_mg_L,"Total nitrogen (organic + inorganic, dissolved + particulate)",mg/L,float64,1742,1738,4,0.2,824,0.156,6.3362,0.9107,0.5607
+Turbidity,turbidity_NTU,Turbidity; light-attenuation driver,NTU,float64,1742,1632,110,6.3,172,0.2,81.0,3.4464,5.3989
+Water Temperature,temp_C,Water temperature,°C,float64,1742,1718,24,1.4,190,11.5,34.3,26.5194,4.0919
+Latitude,latitude,Station latitude (WGS84),decimal deg,float64,1742,1742,0,0.0,27,24.9186,25.2408,25.1341,0.0892
+Longitude,longitude,Station longitude (WGS84),decimal deg,float64,1742,1742,0,0.0,26,-81.0806,-80.3883,-80.6754,0.1839
+Matched Scene ID,matched_scene_id,Sentinel-2 scene ID matched to this WQ sample (nearest within +/-30 days),—,object,1742,1662,80,4.6,99,—,—,—,—
+Matched Scene Date,matched_scene_datetime,Acquisition timestamp of the matched Sentinel-2 scene,—,object,1742,1662,80,4.6,99,2016-01-02,2025-12-20,—,—
+Cloud Cover,cloud_cover,Cloud cover percentage of the matched scene,%,float64,1742,1662,80,4.6,91,0.01,19.08,6.7812,4.7807
+Days Offset,days_offset,Absolute days between the WQ sample date and the matched scene's date,days,float64,1742,1662,80,4.6,27,0.0,26.0,9.1209,6.721
+NDAVI,ndavi,Normalized Difference Aquatic Vegetation Index (Villa et al. 2013); buffered mean at station location,—,float64,1742,1602,140,8.0,1311,-0.5719,0.6017,-0.1188,0.1812
+NDAVI Pixel Count,ndavi_n_pixels,Number of valid pixels averaged into the NDAVI value,pixels,int64,1742,1742,0,0.0,9,0.0,14.0,10.3439,3.5379
+WAVI,wavi,Water Adjusted Vegetation Index (Villa et al. 2014); buffered mean at station location,—,float64,1742,1602,140,8.0,1307,-0.4461,0.4832,-0.0628,0.1239
+WAVI Pixel Count,wavi_n_pixels,Number of valid pixels averaged into the WAVI value,pixels,int64,1742,1742,0,0.0,9,0.0,14.0,10.3439,3.5379
+NDVI,ndvi,Normalized Difference Vegetation Index (Rouse et al. 1974); buffered mean at station location,—,float64,1742,1602,140,8.0,1313,-0.4154,0.5843,-0.0783,0.1465
+NDVI Pixel Count,ndvi_n_pixels,Number of valid pixels averaged into the NDVI value,pixels,int64,1742,1742,0,0.0,9,0.0,14.0,10.3439,3.5379
