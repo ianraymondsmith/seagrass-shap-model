@@ -271,6 +271,18 @@ temporal_resampling:
   # interpolations.
   max_gap_days: 30
 
+  # HAB-specific override (see src/hab_matching.py) -- tighter than the
+  # 30-day WQ/spectral standard above. Karenia brevis blooms develop and
+  # dissipate over days-to-weeks, not the weekly-to-monthly timescale that
+  # justifies 30 days for water quality/seagrass condition, so carrying a
+  # single cell-count reading forward 30 days risks implying a bloom
+  # lingered (or stayed absent) far longer than red tide dynamics support.
+  # 14 days sits at the 25th percentile of real HAB sample-to-sample gaps
+  # (median 25 days), retaining 67.4% of resampled rows (1248/1852) vs.
+  # 100% at 30 days -- a real cost, but the tighter window is what the
+  # variable's own behaviour justifies, not just consistency with WQ.
+  hab_max_gap_days: 14
+
 # -----------------------------------------------------------------------------
 # 6. FEATURE ENGINEERING PARAMETERS (Stage 4)
 # -----------------------------------------------------------------------------

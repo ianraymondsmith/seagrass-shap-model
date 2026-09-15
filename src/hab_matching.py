@@ -211,7 +211,11 @@ def run(config: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
     ----------
     config : dict
         Parsed configuration (see ``config/config.yaml``); reuses
-        `temporal_resampling` settings from the main pipeline.
+        `temporal_resampling.resample_freq_days`/`interpolation_method`
+        from the main pipeline, but applies its own
+        `temporal_resampling.hab_max_gap_days` (tighter than the shared
+        `max_gap_days`) since bloom dynamics shift faster than the
+        weekly-to-monthly timescale that justifies 30 days for WQ.
 
     Returns
     -------
@@ -234,6 +238,12 @@ def run(config: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
     interpolate_cols = ["salinity_ppt", "temp_C"]
     nearest_attribution_cols = ["cellcount", "category", "n_observations", "dist_to_station_km"]
 
+    # HAB-specific override, tighter than the shared 30-day WQ/spectral
+    # standard -- see temporal_resampling.hab_max_gap_days in config.yaml
+    # for the rationale (K. brevis blooms shift over days-to-weeks, not
+    # the weekly-to-monthly timescale that justifies 30 days elsewhere).
+    hab_max_gap_days = tr_config["hab_max_gap_days"]
+
     resampled = []
     for station_id, group in clean.groupby("station_id"):
         station_df = group.set_index("date").sort_index()
@@ -241,7 +251,7 @@ def run(config: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
         resampled.append(
             resample_station(
                 station_df, tr_config["resample_freq_days"], tr_config["interpolation_method"],
-                tr_config["max_gap_days"], interpolate_cols, nearest_attribution_cols,
+                hab_max_gap_days, interpolate_cols, nearest_attribution_cols,
             )
         )
     resampled_df = pd.concat(resampled).reset_index(names="date")
