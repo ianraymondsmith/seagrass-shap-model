@@ -889,7 +889,7 @@ def plot_habsos_overview_map(
     gl = ax.gridlines(draw_labels=True, linewidth=0.5, color="gray", alpha=0.5, linestyle="--")
     gl.top_labels = gl.right_labels = False
     ax.set_title("HABSOS Harmful Algal Bloom Observations — Gulf of Mexico", pad=10)
-    ax.legend(loc="lower right", frameon=True, framealpha=0.9, markerscale=3)
+    ax.legend(loc="upper left", frameon=True, framealpha=0.9, markerscale=3)
 
     # Zoomed-in detail inset on the study area itself -- at Gulf-wide scale
     # its observations are a barely-visible speck -- tucked over open Gulf
@@ -906,7 +906,7 @@ def plot_habsos_overview_map(
     # bloom band and west of Florida's -- (-92 deg W, 26 deg N).
     main_pos = ax.get_position()
     inset_size = 0.19
-    target_lon, target_lat = -92.0, 26.0
+    target_lon, target_lat = -92.0, 24.6
     frac_x = (target_lon - main_extent[0]) / (main_extent[1] - main_extent[0])
     frac_y = (target_lat - main_extent[2]) / (main_extent[3] - main_extent[2])
     inset_ax = fig.add_axes(
