@@ -87,6 +87,21 @@ local Jupyter kernel — see "Environment notes" below.
   rule-based presence/absence classifier), the threshold question may not
   block using them at all.
 
+- HAB (harmful algal bloom) data: FWC/NOAA HABSOS export in hand at
+  `data/raw/habsos_20240430.csv` (all Gulf states, 211K rows -- filtered to
+  Florida Bay bbox + 2016-2026 study period by `src/hab_matching.py`, 589
+  raw observations, all *Karenia brevis*). HABSOS has no fixed station
+  network (252 unique lat/lon pairs); each observation is assigned to its
+  nearest DBHYDRO station (mean 8.0 km, max 23.1 km) so it can reuse the
+  same per-station 5-day resampling grid as the main WQ pipeline. Cell
+  count is heavily zero-inflated (median 0, spikes to 103,000 cells/L) --
+  resampled via nearest-observation carry-forward, NOT linear
+  interpolation, to avoid fabricating a smooth ramp into/out of a bloom;
+  salinity/temperature (partial coverage, also reported by HABSOS) ARE
+  linearly interpolated. 3 stations (FLAB48, C111JB, FLAB08) have zero HAB
+  data within reach. Outputs: `data/interim/hab_florida_bay.parquet` and
+  `data/interim/hab_resampled_5day.parquet`.
+
 ## Environment notes
 - **The coding-agent sandbox (Bash/PowerShell tools) has no outbound network
   access.** Confirmed via DNS resolution failure against external hosts.
