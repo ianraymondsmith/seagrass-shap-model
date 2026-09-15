@@ -375,6 +375,576 @@ def plot_environmental_scatter(
     return fig
 
 
+def _simple_basemap_figure(
+    bounds: Dict[str, float], figsize: tuple = (11, 11)
+):
+    """
+    Shared cartographic scaffold for this module's "simple" reference maps:
+    a Cartopy PlateCarree axes zoomed to `bounds` (+15% pad), flat land/water
+    fill, land border -- styled after NOAA NCEI's own HABSOS accession maps
+    (data/raw/HAB .../about/0120767_map.jpg). Used by both
+    `plot_ground_truth_map` (basemap=False) and `plot_dbhydro_station_map`
+    so the two stay visually identical.
+
+    Returns
+    -------
+    (fig, ax, proj, main_extent)
+    """
+    import cartopy.crs as ccrs
+    import cartopy.feature as cfeature
+
+    proj = ccrs.PlateCarree()
+    fig, ax = plt.subplots(figsize=figsize, subplot_kw={"projection": proj})
+    # Zoomed to the data's own bounding box (+15% pad) so points stay
+    # readable -- the wider South Florida shape for context is instead
+    # shown via the locator inset (`_add_locator_inset`).
+    lon_pad = (bounds["lon_max"] - bounds["lon_min"]) * 0.15
+    lat_pad = (bounds["lat_max"] - bounds["lat_min"]) * 0.15
+    main_extent = [
+        bounds["lon_min"] - lon_pad, bounds["lon_max"] + lon_pad,
+        bounds["lat_min"] - lat_pad, bounds["lat_max"] + lat_pad,
+    ]
+    ax.set_extent(main_extent, crs=proj)
+    # Explicit axes background as the ocean colour (confirmed by isolated
+    # testing that land+ocean features interact oddly via z-order when both
+    # are added together) -- land polygon drawn on top, at zorder=2 (not 1)
+    # since GeoAxes' background patch also defaults to zorder=1, and a tie
+    # leaves the land feature hidden behind the background on some render
+    # paths. Border drawn as the land patch's own edgecolor, not a separate
+    # coastline feature: that line-only geometry gets filled with a default
+    # colour unless told facecolor="none", and even fixed it read as visual
+    # noise here.
+    ax.set_facecolor("#cfe8f3")
+    ax.add_feature(
+        cfeature.NaturalEarthFeature("physical", "land", "10m"),
+        facecolor="#e8e4d8", edgecolor="black", linewidth=0.7, zorder=2,
+    )
+    return fig, ax, proj, main_extent
+
+
+def _add_locator_inset(fig: plt.Figure, ax: plt.Axes, proj, main_extent: list) -> plt.Axes:
+    """
+    Small South-Florida-peninsula locator map tucked into the main map's
+    own bottom-left (open-water) corner, with a red rectangle marking where
+    the main map's extent sits within the wider region -- same two-tier
+    layout as the reference NOAA HABSOS map.
+    """
+    import cartopy.feature as cfeature
+
+    main_pos = ax.get_position()
+    inset_ax = fig.add_axes(
+        (main_pos.x0 + 0.006, main_pos.y0 + 0.006, 0.18, 0.18), projection=proj
+    )
+    inset_ax.set_extent([-82.9, -79.9, 24.4, 27.0], crs=proj)
+    inset_ax.set_facecolor("#cfe8f3")
+    inset_ax.add_feature(
+        cfeature.NaturalEarthFeature("physical", "land", "10m"),
+        facecolor="#e8e4d8", edgecolor="black", linewidth=0.5, zorder=2,
+    )
+    inset_ax.add_patch(
+        plt.Rectangle(
+            (main_extent[0], main_extent[2]),
+            main_extent[1] - main_extent[0], main_extent[3] - main_extent[2],
+            transform=proj, edgecolor="red", facecolor="none", linewidth=1.3, zorder=5,
+        )
+    )
+    inset_ax.set_xticks([])
+    inset_ax.set_yticks([])
+    for spine in inset_ax.spines.values():
+        spine.set_edgecolor("black")
+        spine.set_linewidth(0.8)
+    return inset_ax
+
+
+def plot_ground_truth_map(
+    seacar_df: pd.DataFrame,
+    scene_dir: Optional[str] = None,
+    basemap: bool = True,
+    bounds: Optional[Dict[str, float]] = None,
+    pad_km: float = 2.0,
+    figures_dir: str = "outputs/figures",
+    dpi: int = 150,
+    fmt: str = "png",
+) -> plt.Figure:
+    """
+    Map of SEACAR ground-truth sampling locations, colour-coded by health
+    classification (same palette as every other figure in this module --
+    see `CLASS_COLOURS`).
+
+    Two styles, both showing the same points/classification:
+
+    - ``basemap=True`` (default): plotted over a real Sentinel-2 colour-
+      infrared composite (R=NIR/B08, G=Red/B04, B=Blue/B02) cropped to the
+      study bounding box, in projected metres (UTM 17N). Colour-infrared
+      (rather than true colour, which would need the B03 green band this
+      pipeline hasn't downloaded) renders vegetation/mangrove in red tones
+      and open water in dark blue/black -- visually striking and gives
+      real geographic texture, at the cost of busier surroundings around
+      the points themselves.
+    - ``basemap=False``: basic reference cartography via Cartopy -- flat
+      land/water fill, coastline, lat/lon gridlines -- styled after NOAA
+      NCEI's own HABSOS accession maps rather than either the busy
+      satellite composite or a bare axes-only scatter. Requires Cartopy's
+      Natural Earth shapefiles (downloaded once, then cached locally); no
+      `scene_dir` needed since no Sentinel-2 imagery is loaded.
+
+    Parameters
+    ----------
+    seacar_df : pd.DataFrame
+        Must have `Latitude`, `Longitude`, `Braun-Blanquet Score` columns
+        (WGS84 decimal degrees) -- e.g. `04_seacar_spectral_validation.csv`.
+    scene_dir : str, optional
+        Path to a scene folder containing B02.jp2/B04.jp2/B08.jp2 (see
+        `data/raw/sentinel2/<scene_id>/`). Required when ``basemap=True``;
+        pick a low-cloud-cover scene from `scene_manifest.csv`.
+    basemap : bool, optional
+        See above. Default: ``True``.
+    bounds : dict, optional
+        lat_min/lat_max/lon_min/lon_max. Default: `FLORIDA_BAY_BOUNDS`.
+    pad_km : float, optional
+        Padding around the bounding box (basemap version only) so edge
+        points aren't flush against the image border. Default: ``2.0``.
+    figures_dir : str, optional
+        Output directory. Default: ``"outputs/figures"``.
+    dpi : int, optional
+        Output resolution. Default: ``150`` (a basemap image doesn't
+        benefit from 300 dpi print resolution the way a line chart does).
+    fmt : str, optional
+        File format. Default: ``"png"``.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+
+    Examples
+    --------
+    >>> df = pd.read_csv("outputs/consolidated_export/04_seacar_spectral_validation.csv")
+    >>> fig = plot_ground_truth_map(df, "data/raw/sentinel2/S2A_..._T17RNH_...")
+    >>> fig_simple = plot_ground_truth_map(df, basemap=False)
+    """
+    from src.utils.validation import FLORIDA_BAY_BOUNDS
+
+    if bounds is None:
+        bounds = FLORIDA_BAY_BOUNDS
+
+    def classify(score: float) -> str:
+        if score <= 1.0:
+            return "Not Healthy"
+        elif score <= 3.0:
+            return "Intermediate"
+        return "Healthy"
+
+    df = seacar_df.dropna(subset=["Latitude", "Longitude", "Braun-Blanquet Score"]).copy()
+    df["health_class"] = df["Braun-Blanquet Score"].apply(classify)
+
+    if not basemap:
+        fig, ax, proj, main_extent = _simple_basemap_figure(bounds)
+
+        for cls in CLASS_LABELS:
+            sub = df[df["health_class"] == cls]
+            ax.scatter(
+                sub["Longitude"], sub["Latitude"], c=CLASS_COLOURS[cls], s=12, alpha=0.8,
+                label=f"{cls} (n={len(sub)})", edgecolors="white", linewidth=0.3,
+                transform=proj, zorder=5,
+            )
+
+        gl = ax.gridlines(draw_labels=True, linewidth=0.5, color="gray", alpha=0.5, linestyle="--")
+        gl.top_labels = gl.right_labels = False
+        ax.set_title("SEACAR Ground-Truth Sampling Locations — Florida Bay", pad=10)
+        ax.legend(loc="lower right", frameon=True, framealpha=0.9)
+        _add_locator_inset(fig, ax, proj, main_extent)
+
+        save_figure(fig, "ground_truth_map_simple", figures_dir, dpi, fmt)
+        return fig
+
+    if scene_dir is None:
+        raise ValueError("scene_dir is required when basemap=True")
+
+    import rasterio
+    import rasterio.windows
+    from pyproj import Transformer
+
+    with rasterio.open(f"{scene_dir}/B08.jp2") as src:
+        crs = src.crs
+        transform_to_utm = Transformer.from_crs("EPSG:4326", crs, always_xy=True)
+        x_min, y_min = transform_to_utm.transform(bounds["lon_min"], bounds["lat_min"])
+        x_max, y_max = transform_to_utm.transform(bounds["lon_max"], bounds["lat_max"])
+        pad_m = pad_km * 1000
+        window = rasterio.windows.from_bounds(
+            x_min - pad_m, y_min - pad_m, x_max + pad_m, y_max + pad_m, transform=src.transform
+        ).round_offsets().round_lengths()
+        window = window.intersection(rasterio.windows.Window(0, 0, src.width, src.height))
+        win_transform = src.window_transform(window)
+        win_bounds = rasterio.windows.bounds(window, src.transform)
+
+    def load_band_stretched(band_file: str) -> np.ndarray:
+        with rasterio.open(f"{scene_dir}/{band_file}") as src:
+            arr = src.read(1, window=window).astype(np.float32)
+        valid = arr[arr > 0]
+        lo, hi = np.percentile(valid, [2, 98]) if valid.size else (0, 1)
+        return np.clip((arr - lo) / max(hi - lo, 1e-6), 0, 1)
+
+    rgb = np.dstack([load_band_stretched("B08.jp2"), load_band_stretched("B04.jp2"), load_band_stretched("B02.jp2")])
+
+    x, y = transform_to_utm.transform(df["Longitude"].values, df["Latitude"].values)
+    df["_x"], df["_y"] = x, y
+
+    fig, ax = plt.subplots(figsize=(11, 11))
+    ax.imshow(rgb, extent=(win_bounds[0], win_bounds[2], win_bounds[1], win_bounds[3]), origin="upper")
+
+    for cls in CLASS_LABELS:
+        sub = df[df["health_class"] == cls]
+        ax.scatter(
+            sub["_x"], sub["_y"], c=CLASS_COLOURS[cls], s=14, alpha=0.75,
+            label=f"{cls} (n={len(sub)})", edgecolors="white", linewidth=0.3,
+        )
+
+    ax.set_xlim(win_bounds[0], win_bounds[2])
+    ax.set_ylim(win_bounds[1], win_bounds[3])
+    ax.set_xlabel("Easting (m, UTM Zone 17N)")
+    ax.set_ylabel("Northing (m, UTM Zone 17N)")
+    ax.set_title("SEACAR Ground-Truth Sampling Locations — Florida Bay", pad=10)
+    ax.legend(loc="upper right", frameon=True, framealpha=0.9)
+
+    save_figure(fig, "ground_truth_map", figures_dir, dpi, fmt)
+    return fig
+
+
+# Distinct from CLASS_COLOURS (health classification) since this is a
+# different categorical variable -- station network membership -- and the
+# two maps may sit side by side in the same notebook.
+_STATION_GROUP_COLOURS = {
+    "Open Bay (FLAB)": "#2166AC",
+    "Canal Inflow (C111)": "#762A83",
+}
+
+
+def plot_dbhydro_station_map(
+    wq_df: pd.DataFrame,
+    bounds: Optional[Dict[str, float]] = None,
+    label_stations: bool = True,
+    figures_dir: str = "outputs/figures",
+    dpi: int = 150,
+    fmt: str = "png",
+) -> plt.Figure:
+    """
+    Map of DBHYDRO water-quality monitoring station locations, colour-coded
+    by network membership (open-bay FLAB stations vs. C-111 canal-inflow
+    stations).
+
+    Same "simple" reference-map style as `plot_ground_truth_map`
+    (basemap=False): flat land/water cartography, gridlines, and a South
+    Florida locator inset, so the two figures read as a matched pair.
+
+    Parameters
+    ----------
+    wq_df : pd.DataFrame
+        Must have `Station`, `Latitude`, `Longitude` columns (WGS84 decimal
+        degrees) -- e.g. `01_wq_florida_bay_clean.csv`. One row per station
+        is plotted (duplicates from repeated station-date rows are dropped).
+    bounds : dict, optional
+        lat_min/lat_max/lon_min/lon_max. Default: `FLORIDA_BAY_BOUNDS`.
+    label_stations : bool, optional
+        Annotate each point with its station ID. With only 22 stations
+        (unlike the thousands of SEACAR points) labels stay readable and
+        add real value. Default: ``True``.
+    figures_dir : str, optional
+        Output directory. Default: ``"outputs/figures"``.
+    dpi : int, optional
+        Output resolution. Default: ``150``.
+    fmt : str, optional
+        File format. Default: ``"png"``.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+
+    Examples
+    --------
+    >>> df = pd.read_csv("outputs/consolidated_export/01_wq_florida_bay_clean.csv")
+    >>> fig = plot_dbhydro_station_map(df)
+    """
+    from src.utils.validation import FLORIDA_BAY_BOUNDS
+
+    if bounds is None:
+        bounds = FLORIDA_BAY_BOUNDS
+
+    stations = wq_df.dropna(subset=["Latitude", "Longitude"]).drop_duplicates("Station").copy()
+    stations["station_group"] = np.where(
+        stations["Station"].str.startswith("FLAB"), "Open Bay (FLAB)", "Canal Inflow (C111)"
+    )
+
+    fig, ax, proj, main_extent = _simple_basemap_figure(bounds)
+
+    for group, colour in _STATION_GROUP_COLOURS.items():
+        sub = stations[stations["station_group"] == group]
+        ax.scatter(
+            sub["Longitude"], sub["Latitude"], c=colour, s=45, alpha=0.9,
+            label=f"{group} (n={len(sub)})", edgecolors="white", linewidth=0.6,
+            transform=proj, zorder=5,
+        )
+
+    if label_stations:
+        # Default offset overlaps in the tight FLAB04/05/06/08/10 + C111JB
+        # cluster (all within ~0.15 deg of each other, upper right of the
+        # bay) -- nudged individually so those labels stay legible.
+        label_offsets = {
+            "FLAB08": (4, 10),
+            "C111JB": (-8, 14),
+            "FLAB10": (8, -14),
+            "FLAB06": (4, -12),
+            "FLAB05": (4, -10),
+            "FLAB04": (6, 2),
+        }
+        for _, row in stations.iterrows():
+            ax.annotate(
+                row["Station"], (row["Longitude"], row["Latitude"]),
+                xytext=label_offsets.get(row["Station"], (4, 3)),
+                textcoords="offset points", fontsize=7, color="#333333",
+                transform=proj, zorder=6,
+            )
+
+    gl = ax.gridlines(draw_labels=True, linewidth=0.5, color="gray", alpha=0.5, linestyle="--")
+    gl.top_labels = gl.right_labels = False
+    ax.set_title("DBHYDRO Water Quality Monitoring Stations — Florida Bay", pad=10)
+    ax.legend(loc="lower right", frameon=True, framealpha=0.9)
+    _add_locator_inset(fig, ax, proj, main_extent)
+
+    save_figure(fig, "dbhydro_station_map", figures_dir, dpi, fmt)
+    return fig
+
+
+def plot_sentinel2_footprint_map(
+    scene_dir: str,
+    bounds: Optional[Dict[str, float]] = None,
+    figures_dir: str = "outputs/figures",
+    dpi: int = 150,
+    fmt: str = "png",
+) -> plt.Figure:
+    """
+    Map of the acquired Sentinel-2 tile footprint against the Florida Bay
+    study area, for context on spectral data coverage.
+
+    Every one of the 120 acquired scenes (`data/raw/sentinel2/
+    scene_manifest.csv`) is the same MGRS tile (T17RNH) at different dates,
+    so there is exactly one footprint to show, not 120. Same "simple"
+    reference-map style as `plot_ground_truth_map`/`plot_dbhydro_station_map`
+    (flat land/water cartography, gridlines, South Florida locator inset).
+
+    Parameters
+    ----------
+    scene_dir : str
+        Path to any one acquired scene folder containing `B08.jp2` (its
+        footprint is identical for every scene of the same tile) -- e.g.
+        `data/raw/sentinel2/<scene_id>/`.
+    bounds : dict, optional
+        Study-area lat_min/lat_max/lon_min/lon_max, drawn as a dashed
+        reference outline. Default: `FLORIDA_BAY_BOUNDS`.
+    figures_dir : str, optional
+        Output directory. Default: ``"outputs/figures"``.
+    dpi : int, optional
+        Output resolution. Default: ``150``.
+    fmt : str, optional
+        File format. Default: ``"png"``.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+
+    Examples
+    --------
+    >>> fig = plot_sentinel2_footprint_map(
+    ...     "data/raw/sentinel2/S2A_..._T17RNH_..."
+    ... )
+    """
+    import re
+
+    import rasterio
+    from pyproj import Transformer
+
+    from src.utils.validation import FLORIDA_BAY_BOUNDS
+
+    if bounds is None:
+        bounds = FLORIDA_BAY_BOUNDS
+
+    tile_match = re.search(r"_(T\d\d[A-Z]{3})_", Path(scene_dir).name)
+    tile_id = tile_match.group(1) if tile_match else "Sentinel-2 tile"
+
+    with rasterio.open(f"{scene_dir}/B08.jp2") as src:
+        transform_to_wgs84 = Transformer.from_crs(src.crs, "EPSG:4326", always_xy=True)
+        tile_lon_min, tile_lat_min = transform_to_wgs84.transform(src.bounds.left, src.bounds.bottom)
+        tile_lon_max, tile_lat_max = transform_to_wgs84.transform(src.bounds.right, src.bounds.top)
+
+    # Zoom extent must cover the tile AND the study area -- the tile is far
+    # larger than Florida Bay, but a corner of the bay's own bounding box
+    # (west of ~81.0 deg W, e.g. FLAB25) actually falls just outside it, so
+    # neither box alone is guaranteed to contain the other.
+    combined_bounds = {
+        "lon_min": min(bounds["lon_min"], tile_lon_min),
+        "lon_max": max(bounds["lon_max"], tile_lon_max),
+        "lat_min": min(bounds["lat_min"], tile_lat_min),
+        "lat_max": max(bounds["lat_max"], tile_lat_max),
+    }
+
+    fig, ax, proj, main_extent = _simple_basemap_figure(combined_bounds)
+
+    ax.add_patch(
+        plt.Rectangle(
+            (tile_lon_min, tile_lat_min), tile_lon_max - tile_lon_min, tile_lat_max - tile_lat_min,
+            transform=proj, facecolor="#2166AC", alpha=0.15, edgecolor="#2166AC", linewidth=1.5,
+            label=f"Sentinel-2 tile {tile_id} footprint", zorder=4,
+        )
+    )
+    ax.add_patch(
+        plt.Rectangle(
+            (bounds["lon_min"], bounds["lat_min"]),
+            bounds["lon_max"] - bounds["lon_min"], bounds["lat_max"] - bounds["lat_min"],
+            transform=proj, facecolor="none", edgecolor="#D62728", linewidth=1.5, linestyle="--",
+            label="Study area (Florida Bay)", zorder=5,
+        )
+    )
+
+    gl = ax.gridlines(draw_labels=True, linewidth=0.5, color="gray", alpha=0.5, linestyle="--")
+    gl.top_labels = gl.right_labels = False
+    ax.set_title("Sentinel-2 Tile Coverage — Florida Bay", pad=10)
+    ax.legend(loc="lower right", frameon=True, framealpha=0.9)
+    _add_locator_inset(fig, ax, proj, main_extent)
+
+    save_figure(fig, "sentinel2_footprint_map", figures_dir, dpi, fmt)
+    return fig
+
+
+def plot_habsos_overview_map(
+    raw_habsos_path: str = "data/raw/habsos_20240430.csv",
+    bounds: Optional[Dict[str, float]] = None,
+    figures_dir: str = "outputs/figures",
+    dpi: int = 150,
+    fmt: str = "png",
+) -> plt.Figure:
+    """
+    Gulf-of-Mexico-wide map of every raw HABSOS observation location, with
+    this project's Florida Bay study area marked -- built in the same
+    cartographic style as `plot_ground_truth_map`/`plot_dbhydro_station_map`
+    /`plot_sentinel2_footprint_map`, rather than annotating NOAA NCEI's own
+    accession map image (`data/raw/HAB .../0120767_map.jpg`) directly.
+
+    Plots the full, unfiltered accession (211K rows, all Gulf states) so the
+    coastal density pattern matches that reference map -- `hab_matching.py`'s
+    589-row Florida-Bay-bbox-filtered subset is what actually feeds the
+    pipeline (see `plot_dbhydro_station_map` for where those land relative
+    to the DBHYDRO network) and would be a nearly invisible speck at this
+    scale.
+
+    Parameters
+    ----------
+    raw_habsos_path : str, optional
+        Path to the raw HABSOS export CSV.
+    bounds : dict, optional
+        Study-area lat_min/lat_max/lon_min/lon_max, drawn as a dashed
+        reference outline. Default: `FLORIDA_BAY_BOUNDS`.
+    figures_dir : str, optional
+        Output directory. Default: ``"outputs/figures"``.
+    dpi : int, optional
+        Output resolution. Default: ``150``.
+    fmt : str, optional
+        File format. Default: ``"png"``.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+
+    Examples
+    --------
+    >>> fig = plot_habsos_overview_map()
+    """
+    import cartopy.feature as cfeature
+
+    from src.utils.validation import FLORIDA_BAY_BOUNDS
+
+    if bounds is None:
+        bounds = FLORIDA_BAY_BOUNDS
+
+    habsos = pd.read_csv(raw_habsos_path, usecols=["LATITUDE", "LONGITUDE"], low_memory=False).dropna()
+
+    data_bounds = {
+        "lon_min": habsos["LONGITUDE"].min(), "lon_max": habsos["LONGITUDE"].max(),
+        "lat_min": habsos["LATITUDE"].min(), "lat_max": habsos["LATITUDE"].max(),
+    }
+    fig, ax, proj, main_extent = _simple_basemap_figure(data_bounds, figsize=(11, 9))
+
+    ax.scatter(
+        habsos["LONGITUDE"], habsos["LATITUDE"], c="#D62728", s=3, alpha=0.35,
+        edgecolors="none", label=f"HABSOS observation (n={len(habsos):,})",
+        transform=proj, zorder=4,
+    )
+    ax.add_patch(
+        plt.Rectangle(
+            (bounds["lon_min"], bounds["lat_min"]),
+            bounds["lon_max"] - bounds["lon_min"], bounds["lat_max"] - bounds["lat_min"],
+            transform=proj, facecolor="none", edgecolor="black", linewidth=1.8, linestyle="--",
+            label="Study area (Florida Bay)", zorder=5,
+        )
+    )
+
+    gl = ax.gridlines(draw_labels=True, linewidth=0.5, color="gray", alpha=0.5, linestyle="--")
+    gl.top_labels = gl.right_labels = False
+    ax.set_title("HABSOS Harmful Algal Bloom Observations — Gulf of Mexico", pad=10)
+    ax.legend(loc="lower right", frameon=True, framealpha=0.9, markerscale=3)
+
+    # Zoomed-in detail inset on the study area itself -- at Gulf-wide scale
+    # its observations are a barely-visible speck -- tucked over open Gulf
+    # water (clear of both coastline and every dot cluster) rather than the
+    # bottom-left corner used elsewhere, which here is Mexican coastline.
+    inset_lon_pad = (bounds["lon_max"] - bounds["lon_min"]) * 0.6
+    inset_lat_pad = (bounds["lat_max"] - bounds["lat_min"]) * 0.6
+    inset_extent = [
+        bounds["lon_min"] - inset_lon_pad, bounds["lon_max"] + inset_lon_pad,
+        bounds["lat_min"] - inset_lat_pad, bounds["lat_max"] + inset_lat_pad,
+    ]
+    # Anchored on-screen (not by its own data extent) to sit over deep,
+    # observation-free open Gulf water south of the Louisiana/Mississippi
+    # bloom band and west of Florida's -- (-92 deg W, 26 deg N).
+    main_pos = ax.get_position()
+    inset_size = 0.19
+    target_lon, target_lat = -92.0, 26.0
+    frac_x = (target_lon - main_extent[0]) / (main_extent[1] - main_extent[0])
+    frac_y = (target_lat - main_extent[2]) / (main_extent[3] - main_extent[2])
+    inset_ax = fig.add_axes(
+        (
+            main_pos.x0 + frac_x * main_pos.width - inset_size / 2,
+            main_pos.y0 + frac_y * main_pos.height - inset_size / 2,
+            inset_size, inset_size,
+        ),
+        projection=proj,
+    )
+    inset_ax.set_extent(inset_extent, crs=proj)
+    inset_ax.set_facecolor("#cfe8f3")
+    inset_ax.add_feature(
+        cfeature.NaturalEarthFeature("physical", "land", "10m"),
+        facecolor="#e8e4d8", edgecolor="black", linewidth=0.7, zorder=2,
+    )
+    inset_ax.scatter(
+        habsos["LONGITUDE"], habsos["LATITUDE"], c="#D62728", s=10, alpha=0.6,
+        edgecolors="none", transform=proj, zorder=4,
+    )
+    inset_ax.add_patch(
+        plt.Rectangle(
+            (bounds["lon_min"], bounds["lat_min"]),
+            bounds["lon_max"] - bounds["lon_min"], bounds["lat_max"] - bounds["lat_min"],
+            transform=proj, facecolor="none", edgecolor="black", linewidth=1.5, linestyle="--", zorder=5,
+        )
+    )
+    inset_ax.set_title("Florida Bay detail", fontsize=9, pad=4)
+    inset_ax.set_xticks([])
+    inset_ax.set_yticks([])
+    for spine in inset_ax.spines.values():
+        spine.set_edgecolor("black")
+        spine.set_linewidth(1.0)
+
+    save_figure(fig, "habsos_overview_map", figures_dir, dpi, fmt)
+    return fig
+
+
 def plot_confusion_matrix(
     cm: np.ndarray,
     model_name: str,
